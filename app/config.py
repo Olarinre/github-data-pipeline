@@ -31,3 +31,9 @@ DATABASE_URL = (
     f"{DATABASE_CONFIG['host']}:{DATABASE_CONFIG['port']}/{DATABASE_CONFIG['database']}"
 )
 print(DATABASE_URL)
+
+# GitHub
+
+GITHUB_TOKEN = _get_setting("GITHUB_TOKEN", "")
+
+GITHUB_API_URL = "https://api.github.com"
