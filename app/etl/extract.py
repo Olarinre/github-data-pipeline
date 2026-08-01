@@ -1,86 +1,93 @@
-import requests
-from typing import Dict, Any
 import json
 from pathlib import Path
 
+from requests import Session
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from app.config import GITHUB_API_URL, GITHUB_TOKEN
-
-
-def create_session() -> requests.Session:
-    """
-    Creates a reusable HTTP session.
-    """
-
-    session = requests.Session()
-
-    session.headers.update({
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "github-data-pipeline"
-    })
-
-    if GITHUB_TOKEN:
-        session.headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
-
-    return session
-
-
-
-
-
-def fetch_repositories(
-    language: str = "Python",
-    sort: str = "stars",
-    per_page: int = 100,
-    page: int = 1
-) -> Dict[str, Any]:
-    """
-    Fetch repositories from GitHub.
-    """
-
-    session = create_session()
-
-    response = session.get(
-        f"{GITHUB_API_URL}/search/repositories",
-        params={
-            "q": f"language:{language}",
-            "sort": sort,
-            "per_page": per_page,
-            "page": page
-        },
-        timeout=30
-    )
-
-    response.raise_for_status()
-
-    return response.json()
-
+from app.logger import logger
 
 RAW_DIR = Path("data/raw")
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-def save_raw_json(data, filename):
 
-    filepath = RAW_DIR / filename
+class GitHubExtractor:
 
-    with open(filepath, "w", encoding="utf-8") as file:
-        json.dump(
-            data,
-            file,
-            indent=2
+    def __init__(self):
+
+        self.base_url = GITHUB_API_URL
+
+        self.session = Session()
+
+        self.session.headers.update({
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "github-data-pipeline"
+        })
+
+        if GITHUB_TOKEN:
+            self.session.headers.update({
+                "Authorization": f"Bearer {GITHUB_TOKEN}"
+            })
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
+    def search_repositories(
+        self,
+        language="Python",
+        page=1,
+        per_page=100
+    ):
+
+        logger.info("Fetching repositories...")
+
+        response = self.session.get(
+            f"{self.base_url}/search/repositories",
+            params={
+                "q": f"language:{language}",
+                "sort": "stars",
+                "page": page,
+                "per_page": per_page
+            },
+            timeout=30
         )
 
-    return filepath
+        response.raise_for_status()
 
+        logger.info("GitHub request successful.")
 
+        return response.json()
+
+    def save_raw_data(
+        self,
+        data,
+        filename
+    ):
+
+        filepath = RAW_DIR / filename
+
+        with open(filepath, "w", encoding="utf-8") as file:
+            json.dump(
+                data,
+                file,
+                indent=2
+            )
+
+        logger.info(f"Saved raw file -> {filepath}")
+
+        return filepath
 
 
 if __name__ == "__main__":
 
-    data = fetch_repositories()
+    extractor = GitHubExtractor()
 
-    path = save_raw_json(
+    data = extractor.search_repositories()
+
+    extractor.save_raw_data(
         data,
         "repositories.json"
     )
 
-    print(path)
+    print(len(data["items"]))
