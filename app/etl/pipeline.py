@@ -1,9 +1,14 @@
+import datetime
 import time
 
 from app.etl.extract import GitHubExtractor
 from app.etl.transform import GitHubTransformer
 from app.etl.load import GitHubLoader
 from app.logger import logger
+from app.quality.validation import DataValidator
+from app.etl.metadata import PipelineMetadata
+
+
 
 
 class GitHubPipeline:
@@ -13,70 +18,81 @@ class GitHubPipeline:
         self.extractor = GitHubExtractor()
         self.transformer = GitHubTransformer()
         self.loader = GitHubLoader()
+        self.validator = DataValidator()
+        self.metadata = PipelineMetadata()
 
     def run(self):
 
         logger.info("=" * 60)
         logger.info("Starting GitHub ETL Pipeline")
 
+        start_datetime = datetime.utcnow()
         start_time = time.perf_counter()
 
-        # ---------------- Extract ----------------
+        # Initialize variables so they always exist
+        rows_loaded = 0
+        repository_count = 0
+        error_message = None
+        status = "SUCCESS"
 
-        extract_start = time.perf_counter()
+        try:
 
-        raw_data = self.extractor.search_repositories()
+            # ---------------- Extract ----------------
 
-        extract_time = time.perf_counter() - extract_start
+            raw_data = self.extractor.search_repositories()
 
-        repository_count = len(raw_data.get("items", []))
+            repository_count = len(raw_data.get("items", []))
 
-        logger.info(
-            f"Extracted {repository_count} repositories "
-            f"in {extract_time:.2f} seconds."
-        )
-
-        # Save raw JSON
-        self.extractor.save_raw_data(
-            raw_data,
+            self.extractor.save_raw_data(
+                raw_data,
             "repositories.json"
-        )
+            )
 
-        # ---------------- Transform ----------------
+            # ---------------- Transform ----------------
 
-        transform_start = time.perf_counter()
+            df = self.transformer.transform(raw_data)
 
-        df = self.transformer.transform(raw_data)
+            # ---------------- Validate ----------------
 
-        transform_time = time.perf_counter() - transform_start
+            self.validator.validate(df)
 
-        logger.info(
-            f"Transformed {len(df)} repositories "
-            f"in {transform_time:.2f} seconds."
-        )
+            # ---------------- Load ----------------
 
-        # ---------------- Load ----------------
+            self.loader.load(df)
 
-        load_start = time.perf_counter()
+            rows_loaded = len(df)
 
-        self.loader.load(df)
+        except Exception as e:
 
-        load_time = time.perf_counter() - load_start
+            status = "FAILED"
 
-        logger.info(
-            f"Loaded {len(df)} repositories "
-            f"in {load_time:.2f} seconds."
-        )
+            error_message = str(e)
 
-        total_time = time.perf_counter() - start_time
+            logger.exception("Pipeline failed.")
 
-        logger.info(
-            f"Pipeline completed successfully "
-            f"in {total_time:.2f} seconds."
-        )
+            raise
 
-        logger.info("=" * 60)
+        finally:
 
+            end_datetime = datetime.utcnow()
+
+            total_runtime = time.perf_counter() - start_time
+
+            logger.info(
+            f"Pipeline finished in {total_runtime:.2f} seconds."
+            )
+
+            self.metadata.record_run(
+                pipeline_name="GitHub ETL",
+                start_time=start_datetime,
+                end_time=end_datetime,
+                status=status,
+                rows_extracted=repository_count,
+                rows_loaded=rows_loaded,
+                error_message=error_message,
+            )
+
+            logger.info("=" * 60)
 
 if __name__ == "__main__":
 
