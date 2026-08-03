@@ -141,7 +141,7 @@ Stores metadata for every pipeline execution:
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/github-data-pipeline.git
+git clone https://github.com/olarinre/github-data-pipeline.git
 
 cd github-data-pipeline
 ```
