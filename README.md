@@ -264,4 +264,4 @@ Feel free to fork the repository, open an issue, or submit a pull request.
 
 ## 📄 License
 
-This project is available for learning, educational, and portfolio purposes.
+This project is available for learning, and portfolio purposes.
